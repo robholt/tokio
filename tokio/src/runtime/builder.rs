@@ -133,6 +133,10 @@ pub struct Builder {
     /// Configures the task poll count histogram
     pub(super) metrics_poll_count_histogram: HistogramBuilder,
 
+    pub(super) metrics_schedule_to_poll_count_histogram_enable: bool,
+
+    pub(super) metrics_schedule_to_poll_count_histogram: HistogramBuilder,
+
     #[cfg(tokio_unstable)]
     pub(super) unhandled_panic: UnhandledPanic,
 
@@ -322,6 +326,10 @@ impl Builder {
             metrics_poll_count_histogram_enable: false,
 
             metrics_poll_count_histogram: HistogramBuilder::default(),
+
+            metrics_schedule_to_poll_count_histogram_enable: false,
+
+            metrics_schedule_to_poll_count_histogram: HistogramBuilder::default(),
 
             disable_lifo_slot: false,
 
@@ -1556,6 +1564,18 @@ impl Builder {
             self.metrics_poll_count_histogram.legacy_mut(|b|b.num_buckets = buckets);
             self
         }
+
+        /// Enables tracking the distribution of task schedule-to-poll times.
+        pub fn enable_metrics_schedule_to_poll_time_histogram(&mut self) -> &mut Self {
+            self.metrics_schedule_to_poll_count_histogram_enable = true;
+            self
+        }
+
+        /// Configure the histogram for tracking task schedule-to-poll times.
+        pub fn metrics_schedule_to_poll_time_histogram_configuration(&mut self, configuration: HistogramConfiguration) -> &mut Self {
+            self.metrics_schedule_to_poll_count_histogram.histogram_type = configuration.inner;
+            self
+        }
     }
 
     fn build_current_thread_runtime(&mut self) -> io::Result<Runtime> {
@@ -1631,6 +1651,8 @@ impl Builder {
                 disable_lifo_slot: self.disable_lifo_slot,
                 seed_generator: seed_generator_1,
                 metrics_poll_count_histogram: self.metrics_poll_count_histogram_builder(),
+                metrics_schedule_to_poll_histogram: self
+                    .metrics_schedule_to_poll_histogram_builder(),
             },
             local_tid,
         );
@@ -1645,6 +1667,14 @@ impl Builder {
     fn metrics_poll_count_histogram_builder(&self) -> Option<HistogramBuilder> {
         if self.metrics_poll_count_histogram_enable {
             Some(self.metrics_poll_count_histogram.clone())
+        } else {
+            None
+        }
+    }
+
+    fn metrics_schedule_to_poll_histogram_builder(&self) -> Option<HistogramBuilder> {
+        if self.metrics_schedule_to_poll_count_histogram_enable {
+            Some(self.metrics_schedule_to_poll_count_histogram.clone())
         } else {
             None
         }
@@ -1812,6 +1842,7 @@ cfg_rt_multi_thread! {
                     disable_lifo_slot: self.disable_lifo_slot,
                     seed_generator: seed_generator_1,
                     metrics_poll_count_histogram: self.metrics_poll_count_histogram_builder(),
+                    metrics_schedule_to_poll_histogram: self.metrics_schedule_to_poll_histogram_builder(),
                 },
                 self.timer_flavor,
             );

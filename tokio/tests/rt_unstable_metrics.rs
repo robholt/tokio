@@ -769,6 +769,7 @@ fn budget_exhaustion_yield_with_joins() {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg_attr(miri, ignore)]
 #[test]
 fn io_driver_fd_count() {
     let rt = current_thread();
@@ -789,6 +790,7 @@ fn io_driver_fd_count() {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg_attr(miri, ignore)]
 #[test]
 fn io_driver_ready_count() {
     let rt = current_thread();
@@ -798,6 +800,52 @@ fn io_driver_ready_count() {
     let _stream = rt.block_on(async move { stream.await.unwrap() });
 
     assert_eq!(metrics.io_driver_ready_count(), 1);
+}
+
+#[test]
+fn schedule_to_poll_counts() {
+    const N: u64 = 50;
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .enable_metrics_schedule_to_poll_time_histogram()
+        .metrics_schedule_to_poll_time_histogram_configuration(HistogramConfiguration::log(
+            LogHistogram::builder()
+                .max_value(Duration::from_secs(60))
+                .min_value(Duration::from_nanos(100))
+                .max_error(0.25),
+        ))
+        .build()
+        .unwrap();
+    let metrics = rt.metrics();
+    let num_buckets = rt.metrics().schedule_to_poll_time_histogram_num_buckets();
+    assert_eq!(num_buckets, 119);
+    rt.block_on(async {
+        for _ in 0..N {
+            tokio::spawn(async {}).await.unwrap();
+        }
+    });
+    drop(rt);
+    assert_eq!(
+        metrics.schedule_to_poll_time_histogram_bucket_range(0),
+        Duration::from_nanos(0)..Duration::from_nanos(96)
+    );
+    assert_eq!(
+        metrics.schedule_to_poll_time_histogram_bucket_range(1),
+        Duration::from_nanos(96)..Duration::from_nanos(96 + 2_u64.pow(4))
+    );
+    assert_eq!(
+        metrics
+            .schedule_to_poll_time_histogram_bucket_range(118)
+            .end,
+        Duration::from_nanos(u64::MAX)
+    );
+    let n = (0..metrics.num_workers())
+        .flat_map(|i| (0..num_buckets).map(move |j| (i, j)))
+        .map(|(worker, bucket)| {
+            metrics.schedule_to_poll_time_histogram_bucket_count(worker, bucket)
+        })
+        .sum();
+    assert_eq!(N, n);
 }
 
 async fn try_spawn_stealable_task() -> Result<(), mpsc::RecvTimeoutError> {

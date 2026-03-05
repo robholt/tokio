@@ -571,6 +571,41 @@ impl RuntimeMetrics {
         pub fn blocking_queue_depth(&self) -> usize {
             self.handle.inner.blocking_queue_depth()
         }
+
+        /// Returns `true` if the runtime is tracking the distribution of task
+        /// schedule-to-poll times.
+        pub fn schedule_to_poll_time_histogram_enabled(&self) -> bool {
+            self.handle.inner.worker_metrics(0).schedule_to_poll_count_histogram.is_some()
+        }
+
+        /// Returns the number of histogram buckets tracking the distribution of
+        /// task schedule-to-poll times.
+        pub fn schedule_to_poll_time_histogram_num_buckets(&self) -> usize {
+            self.handle
+                .inner
+                .worker_metrics(0)
+                .schedule_to_poll_count_histogram
+                .as_ref()
+                .map(|histogram| histogram.num_buckets())
+                .unwrap_or_default()
+        }
+
+        /// Returns the range of task schedule-to-poll times tracked by the given bucket.
+        pub fn schedule_to_poll_time_histogram_bucket_range(&self, bucket: usize) -> Range<Duration> {
+            self.handle
+                .inner
+                .worker_metrics(0)
+                .schedule_to_poll_count_histogram
+                .as_ref()
+                .map(|histogram| {
+                    let range = histogram.bucket_range(bucket);
+                    std::ops::Range {
+                        start: Duration::from_nanos(range.start),
+                        end: Duration::from_nanos(range.end),
+                    }
+                })
+                .unwrap_or_default()
+        }
     }
 
     feature! {
@@ -1026,6 +1061,18 @@ impl RuntimeMetrics {
                 .mean_poll_time
                 .load(Relaxed);
             Duration::from_nanos(nanos)
+        }
+
+        /// Returns the number of times the given worker polled tasks with a
+        /// schedule-to-poll duration within the given bucket's range.
+        pub fn schedule_to_poll_time_histogram_bucket_count(&self, worker: usize, bucket: usize) -> u64 {
+            self.handle
+                .inner
+                .worker_metrics(worker)
+                .schedule_to_poll_count_histogram
+                .as_ref()
+                .map(|histogram| histogram.get(bucket))
+                .unwrap_or_default()
         }
     }
 

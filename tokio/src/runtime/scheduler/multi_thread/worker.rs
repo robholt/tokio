@@ -94,6 +94,7 @@ use crate::runtime::time_alt;
 
 #[cfg(all(tokio_unstable, feature = "time"))]
 use crate::runtime::scheduler::util;
+use crate::time::Instant;
 
 /// A scheduler worker
 pub(super) struct Worker {
@@ -629,7 +630,8 @@ impl Context {
         // tasks under this measurement. In this case, the tasks came from the
         // LIFO slot and are considered part of the current task for scheduling
         // purposes. These tasks inherent the "parent"'s limits.
-        core.stats.start_poll();
+        core.stats
+            .start_poll(task.get_scheduled_at().map(|t| t.into_std()));
 
         // Make the core available to the runtime context
         *self.core.borrow_mut() = Some(core);
@@ -1266,6 +1268,8 @@ impl Worker {
 
 impl Handle {
     pub(super) fn schedule_task(&self, task: Notified, is_yield: bool) {
+        task.set_scheduled_at(Instant::now());
+
         with_current(|maybe_cx| {
             if let Some(cx) = maybe_cx {
                 // Make sure the task is part of the **current** scheduler.

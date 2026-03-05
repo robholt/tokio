@@ -26,6 +26,7 @@ use crate::runtime::task::state::State;
 use crate::runtime::task::{Id, Schedule, TaskHarnessScheduleHooks};
 use crate::util::linked_list;
 
+use crate::time::Instant;
 use std::num::NonZeroU64;
 #[cfg(tokio_unstable)]
 use std::panic::Location;
@@ -191,6 +192,8 @@ pub(crate) struct Header {
     /// The tracing ID for this instrumented task.
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) tracing_id: Option<tracing::Id>,
+
+    pub(super) scheduled_at: UnsafeCell<Option<Instant>>,
 }
 
 unsafe impl Send for Header {}
@@ -247,6 +250,7 @@ impl<T: Future, S: Schedule> Cell<T, S> {
                 owner_id: UnsafeCell::new(None),
                 #[cfg(all(tokio_unstable, feature = "tracing"))]
                 tracing_id,
+                scheduled_at: UnsafeCell::new(None),
             }
         }
 
@@ -533,6 +537,14 @@ impl Header {
     #[cfg(all(tokio_unstable, feature = "tracing"))]
     pub(super) unsafe fn get_tracing_id(me: &NonNull<Header>) -> Option<&tracing::Id> {
         me.as_ref().tracing_id.as_ref()
+    }
+
+    pub(super) fn get_scheduled_at(&self) -> Option<Instant> {
+        unsafe { self.scheduled_at.with(|ptr| *ptr) }
+    }
+
+    pub(super) unsafe fn set_scheduled_at(&self, now: Instant) {
+        self.scheduled_at.with_mut(|ptr| *ptr = Some(now));
     }
 }
 

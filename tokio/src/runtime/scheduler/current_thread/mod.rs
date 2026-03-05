@@ -364,7 +364,7 @@ impl Context {
     /// Execute the closure with the given scheduler core stored in the
     /// thread-local context.
     fn run_task<R>(&self, mut core: Box<Core>, f: impl FnOnce() -> R) -> (Box<Core>, R) {
-        core.metrics.start_poll();
+        core.metrics.start_poll(None);
         let mut ret = self.enter(core, || crate::task::coop::budget(f));
         ret.0.metrics.end_poll();
         ret

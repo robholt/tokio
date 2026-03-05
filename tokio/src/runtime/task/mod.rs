@@ -222,6 +222,7 @@ use crate::util::linked_list;
 use crate::util::sharded_list;
 
 use crate::runtime::TaskCallback;
+use crate::time::Instant;
 use std::marker::PhantomData;
 use std::panic::Location;
 use std::ptr::NonNull;
@@ -247,6 +248,12 @@ impl<S> Notified<S> {
     pub(crate) fn task_meta<'meta>(&self) -> crate::runtime::TaskMeta<'meta> {
         self.0.task_meta()
     }
+
+    pub(crate) fn set_scheduled_at(&self, now: Instant) {
+        unsafe {
+            self.0.header().set_scheduled_at(now);
+        }
+    }
 }
 
 // safety: This type cannot be used to touch the task without first verifying
@@ -267,6 +274,10 @@ impl<S> LocalNotified<S> {
     #[inline]
     pub(crate) fn task_meta<'meta>(&self) -> crate::runtime::TaskMeta<'meta> {
         self.task.task_meta()
+    }
+
+    pub(crate) fn get_scheduled_at(&self) -> Option<Instant> {
+        self.task.header().get_scheduled_at()
     }
 }
 

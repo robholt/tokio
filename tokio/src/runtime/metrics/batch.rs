@@ -53,6 +53,9 @@ pub(crate) struct MetricsBatch {
     #[cfg(tokio_unstable)]
     /// If `Some`, tracks poll times in nanoseconds
     poll_timer: Option<PollTimer>,
+
+    #[cfg(tokio_unstable)]
+    schedule_to_poll_counts: Option<HistogramBatch>,
 }
 
 cfg_unstable_metrics! {
@@ -95,6 +98,10 @@ impl MetricsBatch {
                             poll_started_at: now,
                         })
                 });
+                let schedule_to_poll_counts = worker_metrics
+                        .schedule_to_poll_count_histogram
+                        .as_ref()
+                        .map(|worker_schedule_to_poll_counts| HistogramBatch::from_histogram(worker_schedule_to_poll_counts));
                 MetricsBatch {
                     park_count: 0,
                     park_unpark_count: 0,
@@ -108,6 +115,7 @@ impl MetricsBatch {
                     busy_duration_total: 0,
                     processing_scheduled_tasks_started_at: maybe_now,
                     poll_timer,
+                    schedule_to_poll_counts,
                 }
             }
         }
@@ -154,6 +162,11 @@ impl MetricsBatch {
                 if let Some(poll_timer) = &self.poll_timer {
                     let dst = worker.poll_count_histogram.as_ref().unwrap();
                     poll_timer.poll_counts.submit(dst);
+                }
+
+                if let Some(schedule_to_poll_counts) = &self.schedule_to_poll_counts {
+                    let dst = worker.schedule_to_poll_count_histogram.as_ref().unwrap();
+                    schedule_to_poll_counts.submit(dst);
                 }
             }
         }
@@ -206,14 +219,20 @@ impl MetricsBatch {
     cfg_metrics_variant! {
         stable: {
             /// Start polling an individual task
-            pub(crate) fn start_poll(&mut self) {}
+            pub(crate) fn start_poll(&mut self, _task_scheduled_at: Option<Instant>) {}
         },
         unstable: {
             /// Start polling an individual task
-            pub(crate) fn start_poll(&mut self) {
+            pub(crate) fn start_poll(&mut self, task_scheduled_at: Option<Instant>) {
                 self.poll_count += 1;
                 if let Some(poll_timer) = &mut self.poll_timer {
                     poll_timer.poll_started_at = Instant::now();
+                }
+                if let Some(task_scheduled_at) = task_scheduled_at {
+                    if let Some(schedule_to_poll_counts) = &mut self.schedule_to_poll_counts {
+                        let elapsed = duration_as_u64(task_scheduled_at.elapsed());
+                        schedule_to_poll_counts.measure(elapsed, 1);
+                    }
                 }
             }
         }
